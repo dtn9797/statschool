@@ -1,0 +1,69 @@
+version: "3.9" # VERSÃO DO DOCKER-COMPOSE
+services:
+  app:
+    # diz ao Docker Compose para compilar uma imagem local para o serviço app
+    build:
+      # Os argumentos user e uid são injetados no Dockerfile para personalizar os comandos de criação de usuário no momento da compilação.
+      args:
+        user: peterson
+        uid: 1000
+      # localização do Dockerfile
+      context: ./
+      # nome do arquivo caso seja personalizado
+      dockerfile: Dockerfile
+    # define a imagem do Docker que deve ser usada para este contêiner.
+    image: statschool
+    # define o nome do contêiner para este serviço
+    container_name: statschool-app
+    # sempre reinicia este serviço, a menos que ele seja explicitamente interrompido.
+    restart: unless-stopped
+    # define o diretório padrão para este serviço como
+    working_dir: /var/www/
+    # cria um volume compartilhado que sincronizará o conteúdo do diretório atual para o /var/www dentro do contêiner.
+    volumes:
+      - ./:/var/www
+    # defina este serviço para usar uma rede chamada statschool, essa rede é definida no final do arquivo
+    networks:
+      - statschool
+
+  db:
+    image: mysql:5.7
+    container_name: statschool-db
+    # recomendado na documentação do mysql no dockerhub para fins de compatibilidade
+    # command: --default-authentication-plugin=mysql_native_password
+    restart: unless-stopped
+    # essas vars de ambiente estão disponiveis aqui pq o docker-compose carrega o conteudo do arquivo .env localizado no mesmo diretorio para o ambiente do docker na hora do docker-compose up
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_USER: ${DB_USERNAME}
+      SERVICE_TAGS: dev
+      SERVICE_NAME: mysql
+      # A imagem do MySQL importará automaticamente os arquivos .sql colocados no diretório /docker-entrypoint-initdb.d dentro do contêiner.
+    volumes:
+      - ./docker-compose/mysql:/docker-entrypoint-initdb.d
+    # expoe a porta 3306 padrão do mysql para ser acessada da host por um gerenciador de bd como heidisql ou mysql-workbench
+    ports:
+      - 3306:3306
+    networks:
+      - statschool
+
+  nginx:
+    image: nginx:alpine
+    container_name: statschool-nginx
+    restart: unless-stopped
+    # cria um redirecionamento da porta 8000 no sistema host para a porta 80, dentro do contêiner. a comunicação entre os containers acontecerá de forma interna e somente a porta 80 será exposta para poder ser usada no sistema host para ver o output da aplicaçao
+    ports:
+      - 8000:80
+    # cria dois volumes compartilhados. O primeiro sincronizará o conteúdo do diretório atual para o /var/www, dentro do contêiner. Desta forma, quando fizer alterações locais nos arquivos do aplicativo, elas serão refletidas rapidamente no aplicativo que está sendo servido pelo Nginx dentro do contêiner. O segundo volume garantirá que o nosso arquivo de configuração do Nginx, localizado em docker-compose/nginx/statschool.conf, seja copiado para a pasta de configuração do Nginx do contêiner.
+    volumes:
+      - ./:/var/www
+      - ./docker-compose/nginx:/etc/nginx/conf.d/
+    networks:
+      - statschool
+
+# modo bridge para que apenas os containers desse docker-compose possam se comunicar entre si sem conexões externas
+networks:
+  statschool:
+    driver: bridge
